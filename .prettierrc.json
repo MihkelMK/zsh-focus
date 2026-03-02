@@ -1,0 +1,8 @@
+{
+  "trailingComma": "es5",
+  "semi": true,
+  "singleQuote": true,
+  "proseWrap": "never",
+  "htmlWhitespaceSensitivity": "ignore",
+  "bracketSameLine": true
+}
