@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from zsh_focus.config import COMPILED, ensure_dir, expand
-from zsh_focus.types import CheckResult, Config, MatchedEntry, State
+from zsh_focus.types import CheckResult, Config, MatchedEntry, Source, State
 
 # ── Path check (mirrors _focus_check_dir in zsh) ──────────────────────────────
 
@@ -25,7 +25,7 @@ def check_path(config: Config, state: State, target: Path) -> CheckResult:
     strict = mc["strict"] if mc else False
 
     # Collect all candidates: (resolved_entry, source_label)
-    candidates: list[tuple[Path, str]] = []
+    candidates: list[tuple[Path, Source]] = []
     for p in config["always"]["whitelist"]:
         candidates.append((expand(p), "always whitelist"))
     if mc:

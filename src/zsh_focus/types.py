@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 
 class ModeConfig(TypedDict):
@@ -17,7 +17,7 @@ class AlwaysConfig(TypedDict):
 
 class Settings(TypedDict):
     block_notification: bool
-    non_interactive_behavior: str
+    non_interactive_behavior: Literal["block", "allow"]
 
 
 class Config(TypedDict):
@@ -31,10 +31,14 @@ class State:
     active_mode: str = ""
 
 
+Source = Literal["always whitelist", "mode whitelist", "mode blacklist"]
+"""Which list a MatchedEntry was drawn from."""
+
+
 @dataclass
 class MatchedEntry:
     entry: Path
-    source: str  # "always whitelist" | "mode whitelist" | "mode blacklist"
+    source: Source
     is_winner: bool = False
 
 
@@ -44,4 +48,4 @@ class CheckResult:
     active_mode: str
     strict: bool
     matched: list[MatchedEntry]
-    verdict: str  # "allow" | "block" | "prompt"
+    verdict: Literal["allow", "block", "prompt"]
