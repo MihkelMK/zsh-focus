@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 import click
+import cloup
 import toml
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
@@ -103,52 +104,30 @@ def compile_zsh(config: dict, state: dict):
     COMPILED.write_text("\n".join(lines) + "\n")
 
 
+# ── CLI sections ──────────────────────────────────────────────────────────────
+
+
+class Sect:
+    SESSION = cloup.Section("Session")
+    MODES = cloup.Section("Modes")
+    PATHS = cloup.Section("Paths")
+    SETUP = cloup.Section("Setup")
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 
-@click.group()
+@cloup.group(show_subcommand_aliases=True)
 def cli():
     """Focus mode manager — keep your shell sessions intentional."""
     pass
 
 
-@cli.command(name="init")
-@click.option(
-    "--cmd",
-    default=None,
-    metavar="NAME",
-    help="The command name passed to zoxide init (e.g. --cmd cd). "
-    "Omit if you didn't pass --cmd to zoxide.",
-)
-def init_zsh(cmd):
-    """Print zsh integration. Add to .zshrc: eval "$(focus init zsh)"
-
-    If you initialise zoxide with a custom command name, mirror it here:
-
-      eval "$(zoxide init zsh --cmd cd)"
-      eval "$(focus init zsh --cmd cd)"
-    """
-    data = pkgutil.get_data(__name__, PLUGIN_FILE)
-
-    if not data:
-        raise click.ClickException(
-            f"Couldn't find packaged file {PLUGIN_FILE}."
-            "Contact the developer. This should not happen."
-        )
-
-    # Ensure the compiled cache exists so the first source doesn't fail silently
-    if not COMPILED.exists():
-        config = load_config()
-        state = load_state()
-        compile_zsh(config, state)
-
-    zoxide_cmd = cmd if cmd else "z"
-    click.echo(f'_FOCUS_ZOXIDE_CMD="{zoxide_cmd}"')
-    click.echo(data.decode())
+# ── Session ───────────────────────────────────────────────────────────────────
 
 
-@cli.command()
-@click.argument("mode")
+@cli.command(section=Sect.SESSION)
+@cloup.argument("mode")
 def on(mode):
     """Activate a focus mode."""
     config = load_config()
@@ -165,7 +144,7 @@ def on(mode):
     click.echo(f"✓ Focus mode '{mode}' activated.")
 
 
-@cli.command()
+@cli.command(section=Sect.SESSION)
 def off():
     """Deactivate focus mode (transparent shell)."""
     config = load_config()
@@ -175,7 +154,7 @@ def off():
     click.echo("✓ Focus mode deactivated.")
 
 
-@cli.command()
+@cli.command(section=Sect.SESSION)
 def status():
     """Show active mode and directory lists."""
     config = load_config()
@@ -210,21 +189,10 @@ def status():
     )
 
 
-@cli.command(name="new")
-@click.argument("mode")
-def new_mode(mode):
-    """Create a new focus mode."""
-    config = load_config()
-    config.setdefault("modes", {})
-    if mode in config["modes"]:
-        click.echo(f"Mode '{mode}' already exists.")
-        return
-    config["modes"][mode] = {"whitelist": [], "blacklist": []}
-    save_config(config)
-    click.echo(f"✓ Mode '{mode}' created.")
+# ── Modes ─────────────────────────────────────────────────────────────────────
 
 
-@cli.command(name="list")
+@cli.command(name="list", aliases=["ls"], section=Sect.MODES)
 def list_modes():
     """List all focus modes."""
     config = load_config()
@@ -243,9 +211,35 @@ def list_modes():
         click.echo(f"  {name}{marker}  (allow: {wl_count}, deny: {bl_count})")
 
 
-@cli.command()
-@click.argument("path", default="")
-@click.option(
+@cli.command(name="new", section=Sect.MODES)
+@cloup.argument("mode")
+def new_mode(mode):
+    """Create a new focus mode."""
+    config = load_config()
+    config.setdefault("modes", {})
+    if mode in config["modes"]:
+        click.echo(f"Mode '{mode}' already exists.")
+        return
+    config["modes"][mode] = {"whitelist": [], "blacklist": []}
+    save_config(config)
+    click.echo(f"✓ Mode '{mode}' created.")
+
+
+# ── Paths ─────────────────────────────────────────────────────────────────────
+
+
+@cli.group(name="path", section=Sect.PATHS, show_subcommand_aliases=True)
+def path_group():
+    """Manage whitelisted and blacklisted paths.
+
+    All subcommands accept an optional PATH argument (default: current directory).
+    """
+    pass
+
+
+@path_group.command(name="allow", aliases=["a"])
+@cloup.argument("path", default="")
+@cloup.option(
     "-m", "--mode", default=None, help="Mode to add to (default: global whitelist)"
 )
 def allow(path, mode):
@@ -282,10 +276,10 @@ def allow(path, mode):
         click.echo(f"✓ '{target}' → mode '{mode}' whitelist")
 
 
-@cli.command()
-@click.argument("path", default="")
-@click.option("-m", "--mode", required=True, help="Mode to add the deny rule to")
-def deny(path, mode):
+@path_group.command(name="ban", aliases=["b"])
+@cloup.argument("path", default="")
+@cloup.option("-m", "--mode", required=True, help="Mode to add the ban rule to")
+def ban(path, mode):
     """
     Blacklist a directory. Defaults to current directory.
 
@@ -309,12 +303,12 @@ def deny(path, mode):
     click.echo(f"✓ '{target}' → mode '{mode}' blacklist")
 
 
-@cli.command()
-@click.argument("path", default="")
-@click.option(
+@path_group.command(name="clear", aliases=["c"])
+@cloup.argument("path", default="")
+@cloup.option(
     "-m", "--mode", default=None, help="Mode to remove from (default: global)"
 )
-def remove(path, mode):
+def clear(path, mode):
     """
     Remove a whitelist or blacklist entry. Defaults to current directory.
 
@@ -351,3 +345,39 @@ def remove(path, mode):
         click.echo(f"'{target}' wasn't found in any list.")
 
 
+# ── Setup ─────────────────────────────────────────────────────────────────────
+
+
+@cli.command(name="init", section=Sect.SETUP)
+@cloup.option(
+    "--cmd",
+    default=None,
+    metavar="NAME",
+    help="The command name passed to zoxide init (e.g. --cmd cd). "
+    "Omit if you didn't pass --cmd to zoxide.",
+)
+def init_zsh(cmd):
+    """Print zsh integration. Add to .zshrc: eval "$(focus init zsh)"
+
+    If you initialise zoxide with a custom command name, mirror it here:
+
+      eval "$(zoxide init zsh --cmd cd)"
+      eval "$(focus init zsh --cmd cd)"
+    """
+    data = pkgutil.get_data(__name__, PLUGIN_FILE)
+
+    if not data:
+        raise click.ClickException(
+            f"Couldn't find packaged file {PLUGIN_FILE}."
+            "Contact the developer. This should not happen."
+        )
+
+    # Ensure the compiled cache exists so the first source doesn't fail silently
+    if not COMPILED.exists():
+        config = load_config()
+        state = load_state()
+        compile_zsh(config, state)
+
+    zoxide_cmd = cmd if cmd else "z"
+    click.echo(f'_FOCUS_ZOXIDE_CMD="{zoxide_cmd}"')
+    click.echo(data.decode())
