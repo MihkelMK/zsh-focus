@@ -16,8 +16,23 @@ from zsh_focus.config import (
     save_config,
     save_state,
 )
-from zsh_focus.engine import compile_zsh
-from zsh_focus.types import State
+from zsh_focus.engine import check_path, compile_zsh
+from zsh_focus.types import CheckResult, State
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+
+def _here_marker(ep: Path, result: CheckResult) -> str:
+    """Return a styled '◀ here' marker if ep matches the current path check result."""
+    matched_set = {m.entry for m in result.matched}
+    winner_set = {m.entry for m in result.matched if m.is_winner}
+    if ep in winner_set:
+        color = "green" if result.verdict == "allow" else "red"
+        return click.style("  ◀ here", fg=color)
+    if ep in matched_set:
+        return click.style("  ◀ here (overridden)", dim=True)
+    return ""
+
 
 # ── CLI sections ──────────────────────────────────────────────────────────────
 
@@ -74,6 +89,7 @@ def status() -> None:
     """Show active mode and directory lists."""
     config = load_config()
     state = load_state()
+    result = check_path(config, state, Path.cwd())
 
     if state.active_mode:
         mc = config["modes"].get(state.active_mode)
@@ -92,14 +108,14 @@ def status() -> None:
                 if entries:
                     click.echo(f"{label}:")
                     for e in entries:
-                        click.echo(f"    {e}")
+                        click.echo(f"    {e}{_here_marker(expand(e), result)}")
     else:
         click.echo("No active focus mode.")
 
     if config["always"]["whitelist"]:
         click.echo("Always whitelist:")
         for e in config["always"]["whitelist"]:
-            click.echo(f"  {e}")
+            click.echo(f"  {e}{_here_marker(expand(e), result)}")
 
     click.echo("\nSettings:")
     click.echo(
@@ -292,6 +308,51 @@ def clear(path: str, mode: str | None) -> None:
         compile_zsh(config, state)
     else:
         click.echo(f"'{target}' wasn't found in any list.")
+
+
+@path_group.command(name="why", aliases=["w"])
+@cloup.argument("path", default="")
+def why(path: str) -> None:
+    """Explain the allow/block decision for a directory (default: current directory)."""
+    target = expand(path) if path else Path.cwd()
+    config = load_config()
+    state = load_state()
+    result = check_path(config, state, target)
+
+    click.echo(f"Path:  {result.target}")
+
+    if not result.active_mode:
+        click.echo("Mode:  (none active)")
+        click.echo(
+            f"Result: {click.style('✓ allowed', fg='green')} — no focus mode active"
+        )
+        return
+
+    strict_label = click.style(" strict", fg="yellow") if result.strict else ""
+    click.echo(f"Mode:  {click.style(result.active_mode, bold=True)}{strict_label}")
+
+    if result.matched:
+        click.echo("Rules:")
+        for m in result.matched:
+            source_color = "red" if "blacklist" in m.source else "green"
+            source_str = click.style(m.source, fg=source_color)
+            if m.is_winner:
+                winner_str = click.style(
+                    " ← winner",
+                    fg="green" if result.verdict == "allow" else "red",
+                )
+            else:
+                winner_str = click.style(" (overridden)", dim=True)
+            click.echo(f"  {m.entry}  [{source_str}]{winner_str}")
+    else:
+        click.echo("Rules:  (no list entries matched)")
+
+    if result.verdict == "allow":
+        click.echo(f"Result: {click.style('✓ allowed', fg='green')}")
+    elif result.verdict == "block":
+        click.echo(f"Result: {click.style('✗ blocked', fg='red')}")
+    else:
+        click.echo(f"Result: {click.style('? will prompt', fg='yellow')}")
 
 
 # ── Setup ─────────────────────────────────────────────────────────────────────

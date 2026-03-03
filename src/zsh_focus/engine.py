@@ -3,7 +3,84 @@
 from pathlib import Path
 
 from zsh_focus.config import COMPILED, ensure_dir, expand
-from zsh_focus.types import Config, State
+from zsh_focus.types import CheckResult, Config, MatchedEntry, State
+
+# ── Path check (mirrors _focus_check_dir in zsh) ──────────────────────────────
+
+
+def check_path(config: Config, state: State, target: Path) -> CheckResult:
+    """Mirror the shell plugin's longest-match logic and return a structured result."""
+    active_mode = state.active_mode
+
+    if not active_mode:
+        return CheckResult(
+            target=target,
+            active_mode="",
+            strict=False,
+            matched=[],
+            verdict="allow",
+        )
+
+    mc = config["modes"].get(active_mode)
+    strict = mc["strict"] if mc else False
+
+    # Collect all candidates: (resolved_entry, source_label)
+    candidates: list[tuple[Path, str]] = []
+    for p in config["always"]["whitelist"]:
+        candidates.append((expand(p), "always whitelist"))
+    if mc:
+        for p in mc["whitelist"]:
+            candidates.append((expand(p), "mode whitelist"))
+        for p in mc["blacklist"]:
+            candidates.append((expand(p), "mode blacklist"))
+
+    # Find all entries that are a prefix of (or equal to) the target
+    matched: list[MatchedEntry] = []
+    best_white: Path | None = None
+    best_black: Path | None = None
+
+    for entry, source in candidates:
+        if target == entry or str(target).startswith(str(entry) + "/"):
+            matched.append(MatchedEntry(entry=entry, source=source))
+            if "blacklist" in source:
+                if best_black is None or len(str(entry)) > len(str(best_black)):
+                    best_black = entry
+            else:
+                if best_white is None or len(str(entry)) > len(str(best_white)):
+                    best_white = entry
+
+    # Determine verdict — longest wins; tie goes to blacklist
+    verdict: str
+    winner: Path | None = None
+    if best_white or best_black:
+        if best_white and (
+            best_black is None or len(str(best_white)) > len(str(best_black))
+        ):
+            verdict = "allow"
+            winner = best_white
+        else:
+            verdict = "block"
+            winner = best_black
+    elif strict:
+        verdict = "prompt"
+    else:
+        verdict = "allow"
+
+    for m in matched:
+        if m.entry == winner:
+            m.is_winner = True
+
+    # Most specific first
+    matched.sort(key=lambda m: len(str(m.entry)), reverse=True)
+
+    return CheckResult(
+        target=target,
+        active_mode=active_mode,
+        strict=strict,
+        matched=matched,
+        verdict=verdict,
+    )
+
 
 # ── Compiler ──────────────────────────────────────────────────────────────────
 
