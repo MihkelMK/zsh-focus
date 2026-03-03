@@ -358,6 +358,16 @@ def why(path: str) -> None:
 # ── Setup ─────────────────────────────────────────────────────────────────────
 
 
+@cli.command(name="compile", section=Sect.SETUP)
+def compile_cmd() -> None:
+    """Recompile the shell variable cache from current config and state.
+
+    Runs automatically on the next prompt after editing config.toml directly.
+    Use this to force an immediate recompile.
+    """
+    compile_zsh(load_config(), load_state())
+
+
 @cli.command(name="init", section=Sect.SETUP)
 @cloup.option(
     "--cmd",

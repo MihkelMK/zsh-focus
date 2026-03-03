@@ -2,12 +2,18 @@
 
 # _FOCUS_ZOXIDE_CMD is set by `focus init zsh` — don't set it manually.
 _FOCUS_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/zsh-focus"
+_FOCUS_CONFIG_FILE="${_FOCUS_CONFIG_DIR}/config.toml"
 _FOCUS_COMPILED="${_FOCUS_CONFIG_DIR}/compiled.zsh"
 _focus_last_mtime=0
 
 # ── Compiled config reload (runs on each prompt) ─────────────────────────────
 
 _focus_reload_if_needed() {
+    # If config.toml was edited directly, recompile before re-sourcing
+    if [[ -f "$_FOCUS_CONFIG_FILE" && "$_FOCUS_CONFIG_FILE" -nt "$_FOCUS_COMPILED" ]]; then
+        zsh-focus compile 2>/dev/null
+    fi
+
     [[ ! -f "$_FOCUS_COMPILED" ]] && return
     local mtime
     # macOS: stat -f %m  /  Linux: stat -c %Y
