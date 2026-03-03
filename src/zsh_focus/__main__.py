@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """focus — shell focus mode manager."""
 
 import os
@@ -352,5 +351,3 @@ def remove(path, mode):
         click.echo(f"'{target}' wasn't found in any list.")
 
 
-if __name__ == "__main__":
-    cli()
