@@ -9,7 +9,13 @@ from zsh_focus.types import CheckResult, Config, MatchedEntry, Source, State
 
 
 def check_path(config: Config, state: State, target: Path) -> CheckResult:
-    """Mirror the shell plugin's longest-match logic and return a structured result."""
+    """Evaluate target against the active mode's lists and return a structured result.
+
+    Mirrors _focus_check_dir in the zsh plugin: all entries from the always
+    whitelist, mode whitelist, and mode blacklist are tested as path prefixes.
+    The longest matching entry wins; ties go to the blacklist.  In strict mode,
+    a path with no matching entry yields 'prompt' instead of 'allow'.
+    """
     active_mode = state.active_mode
 
     if not active_mode:
@@ -86,7 +92,12 @@ def check_path(config: Config, state: State, target: Path) -> CheckResult:
 
 
 def compile_zsh(config: Config, state: State) -> None:
-    """Write compiled.zsh from current config + state."""
+    """Write COMPILED from the current config and state.
+
+    The file is sourced by the zsh precmd hook on every prompt; it exports
+    shell variables that drive the focus enforcement logic without requiring
+    a Python call on each directory change.
+    """
     active_mode = state.active_mode
     block_notif = "true" if config["settings"]["block_notification"] else "false"
     non_interact = config["settings"]["non_interactive_behavior"]
