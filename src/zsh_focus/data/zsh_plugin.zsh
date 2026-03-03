@@ -1,14 +1,6 @@
 # shellcheck shell=bash
 
-# zsh-focus: directory-aware focus mode plugin
-# eval "$(focus init zsh)" in your .zshrc, AFTER zoxide's init
-#
-# If zoxide was initialised with --cmd cd, mirror that here:
-#   eval "$(zoxide init zsh --cmd cd)"
-#   eval "$(focus init zsh --cmd cd)"
-#
 # _FOCUS_ZOXIDE_CMD is set by `focus init zsh` — don't set it manually.
-
 _FOCUS_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/zsh-focus"
 _FOCUS_COMPILED="${_FOCUS_CONFIG_DIR}/compiled.zsh"
 _focus_last_mtime=0
@@ -149,7 +141,9 @@ function cd() {
     fi
 }
 
-# To initialize zsh-focus, add this to your shell configuration file (usually ~/.zshrc):
+# zsh-focus: directory-aware focus mode plugin
+# eval "$(focus init zsh)" in your .zshrc, AFTER zoxide's init
 #
-# eval "$(zsh-focus init)"
-# IMPORTANT! Source zsh-focus AFTER other cd wrappers like zoxide
+# If zoxide was initialised with --cmd cd, mirror that here:
+#   eval "$(zoxide init zsh --cmd cd)"
+#   eval "$(focus init zsh --cmd cd)"
