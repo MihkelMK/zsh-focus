@@ -14,7 +14,7 @@ dependencies = ["click>=8.3.1", "toml>=0.10.2"]
 dev = ["basedpyright>=1.37.4", "ruff>=0.15.0"]
 
 [project.scripts]
-focus = "zsh_focus.__main__:cli"
+zsh-focus = "zsh_focus.__main__:cli"
 
 [build-system]
 requires = ["uv_build>=0.10.0,<0.11.0"]

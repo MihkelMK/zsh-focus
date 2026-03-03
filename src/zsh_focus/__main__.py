@@ -2,6 +2,7 @@
 """focus — shell focus mode manager."""
 
 import os
+import pkgutil
 import sys
 from pathlib import Path
 
@@ -17,6 +18,8 @@ CONFIG_FILE = CONFIG_DIR / "config.toml"
 STATE_FILE = CONFIG_DIR / "state.toml"
 COMPILED = CONFIG_DIR / "compiled.zsh"
 
+# The plugin .zsh file relative to __name__
+PLUGIN_FILE = "data/zsh_plugin.zsh"
 
 # ── Config helpers ────────────────────────────────────────────────────────────
 
@@ -108,6 +111,41 @@ def compile_zsh(config: dict, state: dict):
 def cli():
     """Focus mode manager — keep your shell sessions intentional."""
     pass
+
+
+@cli.command(name="init")
+@click.option(
+    "--cmd",
+    default=None,
+    metavar="NAME",
+    help="The command name passed to zoxide init (e.g. --cmd cd). "
+    "Omit if you didn't pass --cmd to zoxide.",
+)
+def init_zsh(cmd):
+    """Print zsh integration. Add to .zshrc: eval "$(focus init zsh)"
+
+    If you initialise zoxide with a custom command name, mirror it here:
+
+      eval "$(zoxide init zsh --cmd cd)"
+      eval "$(focus init zsh --cmd cd)"
+    """
+    data = pkgutil.get_data(__name__, PLUGIN_FILE)
+
+    if not data:
+        raise click.ClickException(
+            f"Couldn't find packaged file {PLUGIN_FILE}."
+            "Contact the developer. This should not happen."
+        )
+
+    # Ensure the compiled cache exists so the first source doesn't fail silently
+    if not COMPILED.exists():
+        config = load_config()
+        state = load_state()
+        compile_zsh(config, state)
+
+    zoxide_cmd = cmd if cmd else "z"
+    click.echo(f'_FOCUS_ZOXIDE_CMD="{zoxide_cmd}"')
+    click.echo(data.decode())
 
 
 @cli.command()
