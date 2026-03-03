@@ -50,7 +50,7 @@ _focus_resolve_dest() {
 
     # Try as a literal path first (handles normal absolute/relative paths)
     dest=$(builtin cd -- "$target" 2>/dev/null && pwd)
-    if [[ $? -eq 0 && -n "$dest" ]]; then
+    if [[ -n "$dest" ]]; then
         echo "$dest"
         return 0
     fi
@@ -60,7 +60,7 @@ _focus_resolve_dest() {
     # _FOCUS_ZOXIDE_CMD is "z" for standard init, or e.g. "cd" for --cmd cd.
     if [[ -n "${_FOCUS_ZOXIDE_CMD:-}" ]]; then
         dest=$(zoxide query -- "$@" 2>/dev/null)
-        if [[ $? -eq 0 && -n "$dest" ]]; then
+        if [[ -n "$dest" ]]; then
             echo "$dest"
             return 0
         fi
