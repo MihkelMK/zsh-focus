@@ -1,8 +1,11 @@
-"""Compile config + state into a sourced zsh variable file."""
+"""Focus mode engine — compile config to shell variables and evaluate path decisions."""
 
 from pathlib import Path
 
-from zsh_focus.config import COMPILED, Config, State, ensure_dir, expand
+from zsh_focus.config import COMPILED, ensure_dir, expand
+from zsh_focus.types import Config, State
+
+# ── Compiler ──────────────────────────────────────────────────────────────────
 
 
 def compile_zsh(config: Config, state: State) -> None:

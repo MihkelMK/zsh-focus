@@ -7,17 +7,17 @@ from pathlib import Path
 import click
 import cloup
 
-from zsh_focus.compiler import compile_zsh
 from zsh_focus.config import (
     COMPILED,
     PLUGIN_FILE,
-    State,
     expand,
     load_config,
     load_state,
     save_config,
     save_state,
 )
+from zsh_focus.engine import compile_zsh
+from zsh_focus.types import State
 
 # ── CLI sections ──────────────────────────────────────────────────────────────
 
@@ -77,11 +77,18 @@ def status() -> None:
 
     if state.active_mode:
         mc = config["modes"].get(state.active_mode)
-        strict_label = click.style(" strict", fg="yellow") if mc and mc["strict"] else ""
-        click.echo(f"Active mode: {click.style(state.active_mode, bold=True)}{strict_label}")
+        strict_label = (
+            click.style(" strict", fg="yellow") if mc and mc["strict"] else ""
+        )
+        click.echo(
+            f"Active mode: {click.style(state.active_mode, bold=True)}{strict_label}"
+        )
         if mc:
-            for label, key in (("  Whitelist", "whitelist"), ("  Blacklist", "blacklist")):
-                entries = mc.get(key, [])
+            for label, key in (
+                ("  Whitelist", "whitelist"),
+                ("  Blacklist", "blacklist"),
+            ):
+                entries = mc[key]
                 if entries:
                     click.echo(f"{label}:")
                     for e in entries:
@@ -128,7 +135,11 @@ def list_modes() -> None:
 
 @cli.command(name="new", section=Sect.MODES)
 @cloup.argument("mode")
-@cloup.option("--strict/--no-strict", default=False, help="Prompt on unlisted dirs (default: allow them).")
+@cloup.option(
+    "--strict/--no-strict",
+    default=False,
+    help="Prompt on unlisted dirs (default: allow them).",
+)
 def new_mode(mode: str, strict: bool) -> None:
     """Create a new focus mode."""
     config = load_config()
@@ -142,7 +153,11 @@ def new_mode(mode: str, strict: bool) -> None:
 
 @cli.command(name="set", section=Sect.MODES)
 @cloup.argument("mode")
-@cloup.option("--strict/--no-strict", required=True, help="Prompt on unlisted dirs, or allow them silently.")
+@cloup.option(
+    "--strict/--no-strict",
+    required=True,
+    help="Prompt on unlisted dirs, or allow them silently.",
+)
 def set_mode(mode: str, strict: bool) -> None:
     """Update settings for an existing mode."""
     config = load_config()

@@ -1,11 +1,12 @@
-"""Paths, config, and state helpers."""
+"""Disk I/O and path helpers for zsh-focus."""
 
 import os
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 from pathlib import Path
-from typing import TypedDict
 
 import toml
+
+from zsh_focus.types import Config, State
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
@@ -19,40 +20,16 @@ COMPILED: Path = CONFIG_DIR / "compiled.zsh"
 PLUGIN_FILE: str = "data/zsh_plugin.zsh"
 
 
-# ── Types ─────────────────────────────────────────────────────────────────────
-
-
-class ModeConfig(TypedDict):
-    strict: bool
-    whitelist: list[str]
-    blacklist: list[str]
-
-
-class AlwaysConfig(TypedDict):
-    whitelist: list[str]
-
-
-class Settings(TypedDict):
-    block_notification: bool
-    non_interactive_behavior: str
-
-
-class Config(TypedDict):
-    always: AlwaysConfig
-    settings: Settings
-    modes: dict[str, ModeConfig]
-
-
-@dataclass
-class State:
-    active_mode: str = ""
-
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
 def ensure_dir() -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def expand(p: str | Path) -> Path:
+    """Expand ~ and resolve to absolute path."""
+    return Path(p).expanduser().resolve()
 
 
 def default_config() -> Config:
@@ -99,8 +76,3 @@ def save_state(state: State) -> None:
     ensure_dir()
     with open(STATE_FILE, "w") as f:
         toml.dump(asdict(state), f)
-
-
-def expand(p: str | Path) -> Path:
-    """Expand ~ and resolve to absolute path."""
-    return Path(p).expanduser().resolve()
