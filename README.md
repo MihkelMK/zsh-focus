@@ -195,7 +195,7 @@ blacklist = ["~/social", "~/games", "~/.config"]
 
 - The plugin wraps `cd` at source time, capturing zoxide's wrapper if present.
 - `zoxide`'s fuzzy queries (`z proj`, `zi`) are intercepted and resolved to the destination via `zoxide query`.
-- `focus` (the Python CLI) reads/writes `config.toml` and compiles a `compiled.zsh` cache of plain shell variable assignments.
+- `zsh-focus` (the Python CLI) reads/writes `config.toml` and compiles a `compiled.zsh` cache of plain shell variable assignments.
 - A `precmd` hook checks the mtime of `compiled.zsh` on every prompt and re-sources it if changed.\
   `zsh-focus on <mode>` takes effect immediately. No shell restart needed.
 - The hot path (every `cd`) only reads shell variables. No Python overhead.
