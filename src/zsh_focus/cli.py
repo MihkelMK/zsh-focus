@@ -19,6 +19,8 @@ from zsh_focus.config import (
 from zsh_focus.engine import check_path, compile_zsh
 from zsh_focus.types import CheckResult, State
 
+CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
@@ -47,7 +49,7 @@ class Sect:
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 
-@cloup.group(show_subcommand_aliases=True)
+@cloup.group(show_subcommand_aliases=True, context_settings=CONTEXT_SETTINGS)
 def cli() -> None:
     """Focus mode manager — keep your shell sessions intentional."""
     pass
@@ -56,10 +58,10 @@ def cli() -> None:
 # ── Session ───────────────────────────────────────────────────────────────────
 
 
-@cli.command(section=Sect.SESSION)
+@cli.command(section=Sect.SESSION, short_help="Activate a focus mode.")
 @cloup.argument("mode")
 def on(mode: str) -> None:
-    """Activate a focus mode."""
+    """Start enforcing a focus mode's rules."""
     config = load_config()
     if mode not in config["modes"]:
         click.echo(
@@ -74,9 +76,9 @@ def on(mode: str) -> None:
     click.echo(f"✓ Focus mode '{mode}' activated.")
 
 
-@cli.command(section=Sect.SESSION)
+@cli.command(section=Sect.SESSION, short_help="Deactivate focus mode.")
 def off() -> None:
-    """Deactivate focus mode (transparent shell)."""
+    """Stop enforcing focus rules (transparent shell)."""
     config = load_config()
     state = State()
     save_state(state)
@@ -86,7 +88,10 @@ def off() -> None:
 
 @cli.command(section=Sect.SESSION)
 def status() -> None:
-    """Show active mode and directory lists."""
+    """Show active mode and path lists.
+
+    Entries matching the current directory are marked with ◀ here.
+    """
     config = load_config()
     state = load_state()
     result = check_path(config, state, Path.cwd())
@@ -131,7 +136,7 @@ def status() -> None:
 
 @cli.command(name="list", aliases=["ls"], section=Sect.MODES)
 def list_modes() -> None:
-    """List all focus modes."""
+    """List all defined focus modes."""
     config = load_config()
     state = load_state()
 
@@ -149,7 +154,7 @@ def list_modes() -> None:
         )
 
 
-@cli.command(name="new", section=Sect.MODES)
+@cli.command(name="new", section=Sect.MODES, short_help="Create a new focus mode.")
 @cloup.argument("mode")
 @cloup.option(
     "--strict/--no-strict",
@@ -157,7 +162,7 @@ def list_modes() -> None:
     help="Prompt on unlisted dirs (default: allow them).",
 )
 def new_mode(mode: str, strict: bool) -> None:
-    """Create a new focus mode."""
+    """Create a new focus mode (lenient by default)."""
     config = load_config()
     if mode in config["modes"]:
         click.echo(f"Mode '{mode}' already exists.")
@@ -167,7 +172,9 @@ def new_mode(mode: str, strict: bool) -> None:
     click.echo(f"✓ Mode '{mode}' created{' (strict)' if strict else ''}.")
 
 
-@cli.command(name="set", section=Sect.MODES)
+@cli.command(
+    name="set", section=Sect.MODES, short_help="Toggle strict/lenient for a mode."
+)
 @cloup.argument("mode")
 @cloup.option(
     "--strict/--no-strict",
@@ -175,7 +182,7 @@ def new_mode(mode: str, strict: bool) -> None:
     help="Prompt on unlisted dirs, or allow them silently.",
 )
 def set_mode(mode: str, strict: bool) -> None:
-    """Update settings for an existing mode."""
+    """Toggle strict or lenient behaviour for an existing mode."""
     config = load_config()
     if mode not in config["modes"]:
         click.echo(f"Error: mode '{mode}' doesn't exist.", err=True)
@@ -193,26 +200,25 @@ def set_mode(mode: str, strict: bool) -> None:
 
 @cli.group(name="path", section=Sect.PATHS, show_subcommand_aliases=True)
 def path_group() -> None:
-    """Manage whitelisted and blacklisted paths.
-
-    All subcommands accept an optional PATH argument (default: current directory).
-    """
+    """Manage allowed and banned paths."""
     pass
 
 
-@path_group.command(name="allow", aliases=["a"])
-@cloup.argument("path", default="")
+@path_group.command(name="allow", aliases=["a"], short_help="Whitelist a directory.")
+@cloup.argument(
+    "path",
+    default=None,
+    type=click.Path(path_type=Path, resolve_path=True),
+)
 @cloup.option(
     "-m", "--mode", default=None, help="Mode to add to (default: always whitelist)"
 )
-def allow(path: str, mode: str | None) -> None:
-    """
-    Whitelist a directory. Defaults to current directory.
+def allow(path: Path | None, mode: str | None) -> None:
+    """Add [PATH] to the whitelist (default: current directory).
 
-    Without -m, adds to the always whitelist (all modes).
-    With -m <mode>, adds to that mode's whitelist.
+    Without -m, adds to the always whitelist (active in every mode).
     """
-    target: Path = expand(path) if path else Path.cwd()
+    target = path or Path.cwd()
     config = load_config()
     state = load_state()
 
@@ -239,16 +245,19 @@ def allow(path: str, mode: str | None) -> None:
         click.echo(f"✓ '{target}' → mode '{mode}' whitelist")
 
 
-@path_group.command(name="ban", aliases=["b"])
-@cloup.argument("path", default="")
+@path_group.command(name="ban", aliases=["b"], short_help="Blacklist a directory.")
+@cloup.argument(
+    "path",
+    default=None,
+    type=click.Path(path_type=Path, resolve_path=True),
+)
 @cloup.option("-m", "--mode", required=True, help="Mode to add the ban rule to")
-def ban(path: str, mode: str) -> None:
-    """
-    Blacklist a directory. Defaults to current directory.
+def ban(path: Path | None, mode: str) -> None:
+    """Add [PATH] to a mode's blacklist (default: current directory).
 
-    Always requires -m <mode> (blacklists are per-mode, never global).
+    Blacklists are per-mode only, so -m is always required.
     """
-    target: Path = expand(path) if path else Path.cwd()
+    target = path or Path.cwd()
     config = load_config()
     state = load_state()
 
@@ -266,19 +275,23 @@ def ban(path: str, mode: str) -> None:
     click.echo(f"✓ '{target}' → mode '{mode}' blacklist")
 
 
-@path_group.command(name="clear", aliases=["c"])
-@cloup.argument("path", default="")
+@path_group.command(
+    name="clear", aliases=["c"], short_help="Remove from whitelists/blacklists."
+)
+@cloup.argument(
+    "path",
+    default=None,
+    type=click.Path(path_type=Path, resolve_path=True),
+)
 @cloup.option(
     "-m", "--mode", default=None, help="Mode to remove from (default: always whitelist)"
 )
-def clear(path: str, mode: str | None) -> None:
-    """
-    Remove a whitelist or blacklist entry. Defaults to current directory.
+def clear(path: Path | None, mode: str | None) -> None:
+    """Remove [PATH] from whitelists and blacklists (default: current directory).
 
     Without -m, removes from the always whitelist.
-    With -m <mode>, removes from that mode's whitelist and/or blacklist.
     """
-    target: Path = expand(path) if path else Path.cwd()
+    target = path or Path.cwd()
     config = load_config()
     state = load_state()
     removed = False
@@ -310,11 +323,17 @@ def clear(path: str, mode: str | None) -> None:
         click.echo(f"'{target}' wasn't found in any list.")
 
 
-@path_group.command(name="why", aliases=["w"])
-@cloup.argument("path", default="")
-def why(path: str) -> None:
-    """Explain the allow/block decision for a directory (default: current directory)."""
-    target = expand(path) if path else Path.cwd()
+@path_group.command(
+    name="why", aliases=["w"], short_help="Explain the allow/block decision."
+)
+@cloup.argument(
+    "path",
+    default=None,
+    type=click.Path(path_type=Path, resolve_path=True),
+)
+def why(path: Path | None) -> None:
+    """Explain the allow/block decision for [PATH] (default: current directory)."""
+    target = path or Path.cwd()
     config = load_config()
     state = load_state()
     result = check_path(config, state, target)
@@ -358,12 +377,15 @@ def why(path: str) -> None:
 # ── Setup ─────────────────────────────────────────────────────────────────────
 
 
-@cli.command(name="compile", section=Sect.SETUP)
+@cli.command(
+    name="compile",
+    section=Sect.SETUP,
+    short_help="Regenerate the shell variable cache.",
+)
 def compile_cmd() -> None:
-    """Recompile the shell variable cache from current config and state.
+    """Regenerate the shell variable cache from current config and state.
 
-    Runs automatically on the next prompt after editing config.toml directly.
-    Use this to force an immediate recompile.
+    Runs automatically on the next prompt when config.toml is edited directly.
     """
     compile_zsh(load_config(), load_state())
 
@@ -373,16 +395,22 @@ def compile_cmd() -> None:
     "--cmd",
     default=None,
     metavar="NAME",
-    help="The command name passed to zoxide init (e.g. --cmd cd). "
-    "Omit if you didn't pass --cmd to zoxide.",
+    help="The command name passed to zoxide init (e.g. --cmd cd). ",
 )
 def init_zsh(cmd: str | None) -> None:
-    """Print zsh integration. Add to .zshrc: eval "$(focus init zsh)"
+    """Print the zsh integration snippet.
 
-    If you initialise zoxide with a custom command name, mirror it here:
+    Add to your .zshrc after zoxide's init line:
 
+    \b
+      eval "$(zoxide init zsh)"
+      eval "$(zsh-focus init zsh)"
+
+    Mirror zoxide's --cmd flag if you use one:
+
+    \b
       eval "$(zoxide init zsh --cmd cd)"
-      eval "$(focus init zsh --cmd cd)"
+      eval "$(zsh-focus init zsh --cmd cd)"
     """
     data = pkgutil.get_data("zsh_focus", PLUGIN_FILE)
 
