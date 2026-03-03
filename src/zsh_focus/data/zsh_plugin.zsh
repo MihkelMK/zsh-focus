@@ -102,7 +102,10 @@ _focus_check_dir() {
         fi
     done
 
-    # Not on any list — prompt if interactive, honour config setting otherwise
+    # Not on any list — non-strict modes allow it silently
+    [[ "$ZSH_FOCUS_STRICT" != "true" ]] && return 0
+
+    # Strict mode — prompt if interactive, honour config setting otherwise
     if [[ -o interactive ]]; then
         local response
         print -n "Are you sure this isn't a distraction? (y/N) " >&2

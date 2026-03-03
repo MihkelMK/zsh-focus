@@ -76,14 +76,16 @@ def status() -> None:
     state = load_state()
 
     if state.active_mode:
-        click.echo(f"Active mode: {click.style(state.active_mode, bold=True)}")
-        mc = config["modes"].get(state.active_mode, {})
-        for label, key in (("  Whitelist", "whitelist"), ("  Blacklist", "blacklist")):
-            entries = mc.get(key, [])
-            if entries:
-                click.echo(f"{label}:")
-                for e in entries:
-                    click.echo(f"    {e}")
+        mc = config["modes"].get(state.active_mode)
+        strict_label = click.style(" strict", fg="yellow") if mc and mc["strict"] else ""
+        click.echo(f"Active mode: {click.style(state.active_mode, bold=True)}{strict_label}")
+        if mc:
+            for label, key in (("  Whitelist", "whitelist"), ("  Blacklist", "blacklist")):
+                entries = mc.get(key, [])
+                if entries:
+                    click.echo(f"{label}:")
+                    for e in entries:
+                        click.echo(f"    {e}")
     else:
         click.echo("No active focus mode.")
 
@@ -118,22 +120,41 @@ def list_modes() -> None:
         marker = (
             click.style(" ◀ active", fg="green") if name == state.active_mode else ""
         )
+        strict_label = click.style(" strict", fg="yellow") if mc["strict"] else ""
         click.echo(
-            f"  {name}{marker}  (allow: {len(mc['whitelist'])}, deny: {len(mc['blacklist'])})"
+            f"  {name}{marker}{strict_label}  (allow: {len(mc['whitelist'])}, deny: {len(mc['blacklist'])})"
         )
 
 
 @cli.command(name="new", section=Sect.MODES)
 @cloup.argument("mode")
-def new_mode(mode: str) -> None:
+@cloup.option("--strict/--no-strict", default=False, help="Prompt on unlisted dirs (default: allow them).")
+def new_mode(mode: str, strict: bool) -> None:
     """Create a new focus mode."""
     config = load_config()
     if mode in config["modes"]:
         click.echo(f"Mode '{mode}' already exists.")
         return
-    config["modes"][mode] = {"whitelist": [], "blacklist": []}
+    config["modes"][mode] = {"strict": strict, "whitelist": [], "blacklist": []}
     save_config(config)
-    click.echo(f"✓ Mode '{mode}' created.")
+    click.echo(f"✓ Mode '{mode}' created{' (strict)' if strict else ''}.")
+
+
+@cli.command(name="set", section=Sect.MODES)
+@cloup.argument("mode")
+@cloup.option("--strict/--no-strict", required=True, help="Prompt on unlisted dirs, or allow them silently.")
+def set_mode(mode: str, strict: bool) -> None:
+    """Update settings for an existing mode."""
+    config = load_config()
+    if mode not in config["modes"]:
+        click.echo(f"Error: mode '{mode}' doesn't exist.", err=True)
+        sys.exit(1)
+    config["modes"][mode]["strict"] = strict
+    save_config(config)
+    state = load_state()
+    if state.active_mode == mode:
+        compile_zsh(config, state)
+    click.echo(f"✓ Mode '{mode}' is now {'strict' if strict else 'lenient'}.")
 
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
