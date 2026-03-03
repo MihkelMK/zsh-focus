@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the repository
+        uses: actions/checkout@main
+
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-caching: true
+
+      - name: Lint
+        run: uv run ruff check
+
+      - name: Check Types
+        run: uv run basedpyright -p pyproject.toml
+
+      - name: Test
+        run: uv run pytest
