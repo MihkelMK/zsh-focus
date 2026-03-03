@@ -1,25 +1,26 @@
 """Compile config + state into a sourced zsh variable file."""
 
-from .config import COMPILED, ensure_dir, expand
+from pathlib import Path
+
+from zsh_focus.config import COMPILED, Config, State, ensure_dir, expand
 
 
-def compile_zsh(config: dict, state: dict):
+def compile_zsh(config: Config, state: State) -> None:
     """Write compiled.zsh from current config + state."""
-    settings = config.get("settings", {})
-    active_mode = state.get("active_mode", "")
-    block_notif = "true" if settings.get("block_notification", True) else "false"
-    non_interact = settings.get("non_interactive_behavior", "block")
+    active_mode = state.active_mode
+    block_notif = "true" if config["settings"]["block_notification"] else "false"
+    non_interact = config["settings"]["non_interactive_behavior"]
 
-    global_wl = [expand(p) for p in config.get("global", {}).get("whitelist", [])]
+    global_wl: list[Path] = [expand(p) for p in config["always"]["whitelist"]]
 
-    mode_wl: list[str] = []
-    mode_bl: list[str] = []
-    if active_mode and active_mode in config.get("modes", {}):
+    mode_wl: list[Path] = []
+    mode_bl: list[Path] = []
+    if active_mode and active_mode in config["modes"]:
         mc = config["modes"][active_mode]
-        mode_wl = [expand(p) for p in mc.get("whitelist", [])]
-        mode_bl = [expand(p) for p in mc.get("blacklist", [])]
+        mode_wl = [expand(p) for p in mc["whitelist"]]
+        mode_bl = [expand(p) for p in mc["blacklist"]]
 
-    def zsh_array(items: list[str]) -> str:
+    def zsh_array(items: list[Path]) -> str:
         return "(" + " ".join(f'"{i}"' for i in items) + ")"
 
     lines = [

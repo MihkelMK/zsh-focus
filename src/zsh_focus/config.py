@@ -1,31 +1,62 @@
 """Paths, config, and state helpers."""
 
 import os
+from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import TypedDict
 
 import toml
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
-CONFIG_DIR = (
+CONFIG_DIR: Path = (
     Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "zsh-focus"
 )
-CONFIG_FILE = CONFIG_DIR / "config.toml"
-STATE_FILE = CONFIG_DIR / "state.toml"
-COMPILED = CONFIG_DIR / "compiled.zsh"
+CONFIG_FILE: Path = CONFIG_DIR / "config.toml"
+STATE_FILE: Path = CONFIG_DIR / "state.toml"
+COMPILED: Path = CONFIG_DIR / "compiled.zsh"
 
-PLUGIN_FILE = "data/zsh_plugin.zsh"
+PLUGIN_FILE: str = "data/zsh_plugin.zsh"
+
+
+# ── Types ─────────────────────────────────────────────────────────────────────
+
+
+class ModeConfig(TypedDict):
+    whitelist: list[str]
+    blacklist: list[str]
+
+
+class AlwaysConfig(TypedDict):
+    whitelist: list[str]
+
+
+class Settings(TypedDict):
+    block_notification: bool
+    non_interactive_behavior: str
+
+
+class Config(TypedDict):
+    always: AlwaysConfig
+    settings: Settings
+    modes: dict[str, ModeConfig]
+
+
+@dataclass
+class State:
+    active_mode: str = ""
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def ensure_dir():
+def ensure_dir() -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def default_config() -> dict:
+def default_config() -> Config:
     return {
-        "global": {"whitelist": []},
+        "always": {"whitelist": []},
         "settings": {
             "block_notification": True,
             "non_interactive_behavior": "block",  # "block" | "allow"
@@ -34,30 +65,40 @@ def default_config() -> dict:
     }
 
 
-def load_config() -> dict:
+def load_config() -> Config:
     if not CONFIG_FILE.exists():
         return default_config()
-    return toml.load(CONFIG_FILE)
+    data = toml.load(CONFIG_FILE)
+    config = default_config()
+    config["always"]["whitelist"] = data.get("always", {}).get("whitelist", [])
+    config["settings"].update(data.get("settings", {}))
+    for name, mc in data.get("modes", {}).items():
+        config["modes"][name] = {
+            "whitelist": mc.get("whitelist", []),
+            "blacklist": mc.get("blacklist", []),
+        }
+    return config
 
 
-def save_config(config: dict):
+def save_config(config: Config) -> None:
     ensure_dir()
     with open(CONFIG_FILE, "w") as f:
         toml.dump(config, f)
 
 
-def load_state() -> dict:
+def load_state() -> State:
     if not STATE_FILE.exists():
-        return {"active_mode": ""}
-    return toml.load(STATE_FILE)
+        return State()
+    data = toml.load(STATE_FILE)
+    return State(active_mode=data.get("active_mode", ""))
 
 
-def save_state(state: dict):
+def save_state(state: State) -> None:
     ensure_dir()
     with open(STATE_FILE, "w") as f:
-        toml.dump(state, f)
+        toml.dump(asdict(state), f)
 
 
-def expand(p: str) -> str:
+def expand(p: str | Path) -> Path:
     """Expand ~ and resolve to absolute path."""
-    return str(Path(p).expanduser().resolve())
+    return Path(p).expanduser().resolve()

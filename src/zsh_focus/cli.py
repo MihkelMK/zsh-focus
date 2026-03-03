@@ -1,16 +1,17 @@
 """Focus CLI — all commands."""
 
-import os
 import pkgutil
 import sys
+from pathlib import Path
 
 import click
 import cloup
 
-from .compiler import compile_zsh
-from .config import (
+from zsh_focus.compiler import compile_zsh
+from zsh_focus.config import (
     COMPILED,
     PLUGIN_FILE,
+    State,
     expand,
     load_config,
     load_state,
@@ -32,7 +33,7 @@ class Sect:
 
 
 @cloup.group(show_subcommand_aliases=True)
-def cli():
+def cli() -> None:
     """Focus mode manager — keep your shell sessions intentional."""
     pass
 
@@ -42,42 +43,41 @@ def cli():
 
 @cli.command(section=Sect.SESSION)
 @cloup.argument("mode")
-def on(mode):
+def on(mode: str) -> None:
     """Activate a focus mode."""
     config = load_config()
-    if mode not in config.get("modes", {}):
+    if mode not in config["modes"]:
         click.echo(
             f"Error: mode '{mode}' doesn't exist. Create it with:\n"
             f"  focus new {mode}",
             err=True,
         )
         sys.exit(1)
-    state = {"active_mode": mode}
+    state = State(active_mode=mode)
     save_state(state)
     compile_zsh(config, state)
     click.echo(f"✓ Focus mode '{mode}' activated.")
 
 
 @cli.command(section=Sect.SESSION)
-def off():
+def off() -> None:
     """Deactivate focus mode (transparent shell)."""
     config = load_config()
-    state = {"active_mode": ""}
+    state = State()
     save_state(state)
     compile_zsh(config, state)
     click.echo("✓ Focus mode deactivated.")
 
 
 @cli.command(section=Sect.SESSION)
-def status():
+def status() -> None:
     """Show active mode and directory lists."""
     config = load_config()
     state = load_state()
-    active = state.get("active_mode", "")
 
-    if active:
-        click.echo(f"Active mode: {click.style(active, bold=True)}")
-        mc = config.get("modes", {}).get(active, {})
+    if state.active_mode:
+        click.echo(f"Active mode: {click.style(state.active_mode, bold=True)}")
+        mc = config["modes"].get(state.active_mode, {})
         for label, key in (("  Whitelist", "whitelist"), ("  Blacklist", "blacklist")):
             entries = mc.get(key, [])
             if entries:
@@ -87,19 +87,17 @@ def status():
     else:
         click.echo("No active focus mode.")
 
-    global_wl = config.get("global", {}).get("whitelist", [])
-    if global_wl:
-        click.echo("Global whitelist:")
-        for e in global_wl:
+    if config["always"]["whitelist"]:
+        click.echo("Always whitelist:")
+        for e in config["always"]["whitelist"]:
             click.echo(f"  {e}")
 
-    settings = config.get("settings", {})
     click.echo("\nSettings:")
     click.echo(
-        f"  block_notification:       {settings.get('block_notification', True)}"
+        f"  block_notification:       {config['settings']['block_notification']}"
     )
     click.echo(
-        f"  non_interactive_behavior: {settings.get('non_interactive_behavior', 'block')}"
+        f"  non_interactive_behavior: {config['settings']['non_interactive_behavior']}"
     )
 
 
@@ -107,30 +105,29 @@ def status():
 
 
 @cli.command(name="list", aliases=["ls"], section=Sect.MODES)
-def list_modes():
+def list_modes() -> None:
     """List all focus modes."""
     config = load_config()
     state = load_state()
-    active = state.get("active_mode", "")
-    modes = config.get("modes", {})
 
-    if not modes:
+    if not config["modes"]:
         click.echo("No modes yet. Create one with: focus new <mode>")
         return
 
-    for name, mc in modes.items():
-        marker = click.style(" ◀ active", fg="green") if name == active else ""
-        wl_count = len(mc.get("whitelist", []))
-        bl_count = len(mc.get("blacklist", []))
-        click.echo(f"  {name}{marker}  (allow: {wl_count}, deny: {bl_count})")
+    for name, mc in config["modes"].items():
+        marker = (
+            click.style(" ◀ active", fg="green") if name == state.active_mode else ""
+        )
+        click.echo(
+            f"  {name}{marker}  (allow: {len(mc['whitelist'])}, deny: {len(mc['blacklist'])})"
+        )
 
 
 @cli.command(name="new", section=Sect.MODES)
 @cloup.argument("mode")
-def new_mode(mode):
+def new_mode(mode: str) -> None:
     """Create a new focus mode."""
     config = load_config()
-    config.setdefault("modes", {})
     if mode in config["modes"]:
         click.echo(f"Mode '{mode}' already exists.")
         return
@@ -143,7 +140,7 @@ def new_mode(mode):
 
 
 @cli.group(name="path", section=Sect.PATHS, show_subcommand_aliases=True)
-def path_group():
+def path_group() -> None:
     """Manage whitelisted and blacklisted paths.
 
     All subcommands accept an optional PATH argument (default: current directory).
@@ -154,37 +151,37 @@ def path_group():
 @path_group.command(name="allow", aliases=["a"])
 @cloup.argument("path", default="")
 @cloup.option(
-    "-m", "--mode", default=None, help="Mode to add to (default: global whitelist)"
+    "-m", "--mode", default=None, help="Mode to add to (default: always whitelist)"
 )
-def allow(path, mode):
+def allow(path: str, mode: str | None) -> None:
     """
     Whitelist a directory. Defaults to current directory.
 
-    Without -m, adds to the global whitelist (all modes).
+    Without -m, adds to the always whitelist (all modes).
     With -m <mode>, adds to that mode's whitelist.
     """
-    target = expand(path) if path else os.getcwd()
+    target: Path = expand(path) if path else Path.cwd()
     config = load_config()
     state = load_state()
 
     if mode is None:
-        wl = config.setdefault("global", {}).setdefault("whitelist", [])
-        if target in wl:
-            click.echo(f"'{target}' is already in the global whitelist.")
+        wl = config["always"]["whitelist"]
+        if str(target) in wl:
+            click.echo(f"'{target}' is already in the always whitelist.")
             return
-        wl.append(target)
+        wl.append(str(target))
         save_config(config)
         compile_zsh(config, state)
-        click.echo(f"✓ '{target}' → global whitelist")
+        click.echo(f"✓ '{target}' → always whitelist")
     else:
-        if mode not in config.get("modes", {}):
+        if mode not in config["modes"]:
             click.echo(f"Error: mode '{mode}' doesn't exist.", err=True)
             sys.exit(1)
-        wl = config["modes"][mode].setdefault("whitelist", [])
-        if target in wl:
+        wl = config["modes"][mode]["whitelist"]
+        if str(target) in wl:
             click.echo(f"'{target}' is already in '{mode}' whitelist.")
             return
-        wl.append(target)
+        wl.append(str(target))
         save_config(config)
         compile_zsh(config, state)
         click.echo(f"✓ '{target}' → mode '{mode}' whitelist")
@@ -193,25 +190,25 @@ def allow(path, mode):
 @path_group.command(name="ban", aliases=["b"])
 @cloup.argument("path", default="")
 @cloup.option("-m", "--mode", required=True, help="Mode to add the ban rule to")
-def ban(path, mode):
+def ban(path: str, mode: str) -> None:
     """
     Blacklist a directory. Defaults to current directory.
 
     Always requires -m <mode> (blacklists are per-mode, never global).
     """
-    target = expand(path) if path else os.getcwd()
+    target: Path = expand(path) if path else Path.cwd()
     config = load_config()
     state = load_state()
 
-    if mode not in config.get("modes", {}):
+    if mode not in config["modes"]:
         click.echo(f"Error: mode '{mode}' doesn't exist.", err=True)
         sys.exit(1)
 
-    bl = config["modes"][mode].setdefault("blacklist", [])
-    if target in bl:
+    bl = config["modes"][mode]["blacklist"]
+    if str(target) in bl:
         click.echo(f"'{target}' is already in '{mode}' blacklist.")
         return
-    bl.append(target)
+    bl.append(str(target))
     save_config(config)
     compile_zsh(config, state)
     click.echo(f"✓ '{target}' → mode '{mode}' blacklist")
@@ -220,35 +217,37 @@ def ban(path, mode):
 @path_group.command(name="clear", aliases=["c"])
 @cloup.argument("path", default="")
 @cloup.option(
-    "-m", "--mode", default=None, help="Mode to remove from (default: global)"
+    "-m", "--mode", default=None, help="Mode to remove from (default: always whitelist)"
 )
-def clear(path, mode):
+def clear(path: str, mode: str | None) -> None:
     """
     Remove a whitelist or blacklist entry. Defaults to current directory.
 
-    Without -m, removes from the global whitelist.
+    Without -m, removes from the always whitelist.
     With -m <mode>, removes from that mode's whitelist and/or blacklist.
     """
-    target = expand(path) if path else os.getcwd()
+    target: Path = expand(path) if path else Path.cwd()
     config = load_config()
     state = load_state()
     removed = False
 
     if mode is None:
-        wl = config.get("global", {}).get("whitelist", [])
-        if target in wl:
-            wl.remove(target)
+        wl = config["always"]["whitelist"]
+        if str(target) in wl:
+            wl.remove(str(target))
             removed = True
-            click.echo(f"✓ Removed '{target}' from global whitelist.")
+            click.echo(f"✓ Removed '{target}' from always whitelist.")
     else:
-        if mode not in config.get("modes", {}):
+        if mode not in config["modes"]:
             click.echo(f"Error: mode '{mode}' doesn't exist.", err=True)
             sys.exit(1)
         mc = config["modes"][mode]
-        for list_name in ("whitelist", "blacklist"):
-            lst = mc.get(list_name, [])
-            if target in lst:
-                lst.remove(target)
+        for list_name, lst in (
+            ("whitelist", mc["whitelist"]),
+            ("blacklist", mc["blacklist"]),
+        ):
+            if str(target) in lst:
+                lst.remove(str(target))
                 removed = True
                 click.echo(f"✓ Removed '{target}' from mode '{mode}' {list_name}.")
 
@@ -270,7 +269,7 @@ def clear(path, mode):
     help="The command name passed to zoxide init (e.g. --cmd cd). "
     "Omit if you didn't pass --cmd to zoxide.",
 )
-def init_zsh(cmd):
+def init_zsh(cmd: str | None) -> None:
     """Print zsh integration. Add to .zshrc: eval "$(focus init zsh)"
 
     If you initialise zoxide with a custom command name, mirror it here:
@@ -286,11 +285,8 @@ def init_zsh(cmd):
             "Contact the developer. This should not happen."
         )
 
-    # Ensure the compiled cache exists so the first source doesn't fail silently
     if not COMPILED.exists():
-        config = load_config()
-        state = load_state()
-        compile_zsh(config, state)
+        compile_zsh(load_config(), load_state())
 
     zoxide_cmd = cmd if cmd else "z"
     click.echo(f'_FOCUS_ZOXIDE_CMD="{zoxide_cmd}"')
