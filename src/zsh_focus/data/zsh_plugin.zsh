@@ -72,6 +72,12 @@ _focus_resolve_dest() {
 # ── Core check ────────────────────────────────────────────────────────────────
 
 # Returns 0 (allow) or 1 (block)
+#
+# Matching rule: longest (most specific) prefix wins.
+# If the deepest matching rule is a whitelist entry  → allow.
+# If the deepest matching rule is a blacklist entry  → block.
+# On a tie (same depth in both lists)               → block.
+# No match on either list                           → strict gate.
 _focus_check_dir() {
     local target_dir="$1"
 
@@ -81,26 +87,40 @@ _focus_check_dir() {
     # Resolve to absolute path (:A expands ~ and symlinks)
     target_dir="${target_dir:A}"
 
-    # Global whitelist — prefix match so subdirs are implicitly allowed
-    local dir
+    local best_white="" best_black="" dir
+
+    # Always whitelist
     for dir in "${ZSH_FOCUS_GLOBAL_WHITELIST[@]}"; do
-        [[ "$target_dir" == "$dir" || "$target_dir" == "$dir/"* ]] && return 0
+        if [[ "$target_dir" == "$dir" || "$target_dir" == "$dir/"* ]]; then
+            [[ ${#dir} -gt ${#best_white} ]] && best_white="$dir"
+        fi
     done
 
     # Mode whitelist
     for dir in "${ZSH_FOCUS_MODE_WHITELIST[@]}"; do
-        [[ "$target_dir" == "$dir" || "$target_dir" == "$dir/"* ]] && return 0
+        if [[ "$target_dir" == "$dir" || "$target_dir" == "$dir/"* ]]; then
+            [[ ${#dir} -gt ${#best_white} ]] && best_white="$dir"
+        fi
     done
 
     # Mode blacklist
     for dir in "${ZSH_FOCUS_MODE_BLACKLIST[@]}"; do
         if [[ "$target_dir" == "$dir" || "$target_dir" == "$dir/"* ]]; then
-            if [[ "$ZSH_FOCUS_BLOCK_NOTIFICATION" == "true" ]]; then
-                print -P "%F{red}blocked by focus mode '${ZSH_FOCUS_ACTIVE_MODE}'%f" >&2
-            fi
-            return 1
+            [[ ${#dir} -gt ${#best_black} ]] && best_black="$dir"
         fi
     done
+
+    # At least one list matched — longest wins; tie goes to blacklist.
+    # String length == specificity because all entries are written as resolved
+    # absolute paths by the Python CLI, so a deeper path is always a longer string.
+    if [[ -n "$best_white" || -n "$best_black" ]]; then
+        if [[ ${#best_white} -gt ${#best_black} ]]; then
+            return 0
+        fi
+        [[ "$ZSH_FOCUS_BLOCK_NOTIFICATION" == "true" ]] && \
+            print -P "%F{red}blocked by focus mode '${ZSH_FOCUS_ACTIVE_MODE}'%f" >&2
+        return 1
+    fi
 
     # Not on any list — non-strict modes allow it silently
     [[ "$ZSH_FOCUS_STRICT" != "true" ]] && return 0
