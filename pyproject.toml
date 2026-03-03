@@ -1,18 +1,15 @@
 [project]
 name = "zsh-focus"
 version = "0.0.1"
-description = "A zsh plugin that makes your shell aware of focus modes. When a mode is active, navigating into blacklisted directories is blocked, and unlisted directories prompt for confirmation."
+description = "Shell focus modes for zsh — block or restrict cd navigation by directory."
 authors = [
   { name = "Mihkel Martin Kasterpalu", email = "43957228+MihkelMK@users.noreply.github.com" },
 ]
 urls = { homepage = "https://github.com/MihkelMK/zsh-focus" }
 readme = "README.md"
+license.file = "LICENSE"
 requires-python = ">=3.12"
-dependencies = [
-    "click>=8.3.1",
-    "cloup>=3.0.8",
-    "toml>=0.10.2",
-]
+dependencies = ["click>=8.3.1", "cloup>=3.0.8", "toml>=0.10.2"]
 
 [dependency-groups]
 dev = ["basedpyright>=1.37.4", "ruff>=0.15.0"]
