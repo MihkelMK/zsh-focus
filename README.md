@@ -1,6 +1,6 @@
 # zsh-focus
 
-A zsh plugin that makes your shell aware of focus modes.
+A zsh plugin and Python CLI to block or restrict cd navigation. Keep yourshellf focused.
 
 When a mode is active, navigating into blacklisted directories is blocked.\
 Modes can optionally prompt on unlisted directories too (strict mode).
