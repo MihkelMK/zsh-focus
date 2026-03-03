@@ -1,7 +1,7 @@
 [project]
 name = "zsh-focus"
 version = "0.0.1"
-description = "Add your description here"
+description = "A zsh plugin that makes your shell aware of focus modes. When a mode is active, navigating into blacklisted directories is blocked, and unlisted directories prompt for confirmation."
 authors = [
   { name = "Mihkel Martin Kasterpalu", email = "43957228+MihkelMK@users.noreply.github.com" },
 ]
