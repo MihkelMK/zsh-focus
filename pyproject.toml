@@ -1,6 +1,6 @@
 [project]
 name = "zsh-focus"
-version = "0.0.1"
+version = "0.0.2"
 description = "A zsh plugin and Python CLI to block or restrict cd navigation. Keep yourshellf focused."
 authors = [
   { name = "Mihkel Martin Kasterpalu", email = "43957228+MihkelMK@users.noreply.github.com" },
