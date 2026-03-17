@@ -17,7 +17,7 @@ def make(
     always_wl: tuple[str, ...] = (),
     mode_wl: tuple[str, ...] = (),
     mode_bl: tuple[str, ...] = (),
-    strict: bool = False,
+    mode_warn: tuple[str, ...] = (),
     active: bool = True,
 ) -> tuple[Config, State]:
     config: Config = {
@@ -25,9 +25,9 @@ def make(
         "settings": {"block_notification": True, "non_interactive_behavior": "block"},
         "modes": {
             "test": {
-                "strict": strict,
                 "whitelist": list(mode_wl),
                 "blacklist": list(mode_bl),
+                "warnlist": list(mode_warn),
             }
         },
     }
@@ -35,25 +35,70 @@ def make(
     return config, state
 
 
-# ── Strict / lenient for unlisted dirs ───────────────────────────────────────
+# ── Default behaviour for unlisted dirs ───────────────────────────────────────
 
 
-def test_unlisted_strict_prompts():
-    """Dirs not on any list in strict mode should prompt, not silently allow."""
-    config, state = make(strict=True)
-    assert check_path(config, state, Path(OTHER)).verdict == "prompt"
-
-
-def test_unlisted_lenient_allows():
-    """Dirs not on any list in lenient mode pass through silently — the default."""
-    config, state = make(strict=False)
+def test_unlisted_allows():
+    """Dirs not on any list should pass through silently."""
+    config, state = make()
     assert check_path(config, state, Path(OTHER)).verdict == "allow"
 
 
-def test_strict_mode_respects_always_whitelist():
-    """Always whitelist should still allow in strict mode — not fall through to the prompt gate."""
-    config, state = make(always_wl=(W,), strict=True)
+# ── Warnlist ──────────────────────────────────────────────────────────────────
+
+
+def test_warnlist_prompts():
+    """A directory on the warnlist should yield 'prompt', not silently allow."""
+    config, state = make(mode_warn=(W,))
+    assert check_path(config, state, Path(W)).verdict == "prompt"
+
+
+def test_warnlist_covers_subdirectories():
+    """Warnlisting a parent should prompt for its subdirectories too."""
+    config, state = make(mode_warn=(W,))
+    assert check_path(config, state, Path(WS)).verdict == "prompt"
+
+
+def test_deeper_whitelist_beats_warnlist():
+    """A more-specific whitelist entry should override a shallower warnlist entry."""
+    config, state = make(mode_wl=(WS,), mode_warn=(W,))
     assert check_path(config, state, Path(WS)).verdict == "allow"
+
+
+def test_deeper_warnlist_beats_whitelist():
+    """A more-specific warnlist entry should override a shallower whitelist entry."""
+    config, state = make(mode_wl=(W,), mode_warn=(WS,))
+    assert check_path(config, state, Path(WS)).verdict == "prompt"
+
+
+def test_deeper_blacklist_beats_warnlist():
+    """A more-specific blacklist entry should override a shallower warnlist entry."""
+    config, state = make(mode_warn=(W,), mode_bl=(WS,))
+    assert check_path(config, state, Path(WS)).verdict == "block"
+
+
+def test_tie_warn_beats_white():
+    """Same-length entries on warnlist and whitelist: warnlist wins."""
+    config, state = make(mode_wl=(W,), mode_warn=(W,))
+    assert check_path(config, state, Path(W)).verdict == "prompt"
+
+
+def test_tie_black_beats_warn():
+    """Same-length entries on blacklist and warnlist: blacklist wins."""
+    config, state = make(mode_warn=(W,), mode_bl=(W,))
+    assert check_path(config, state, Path(W)).verdict == "block"
+
+
+def test_strict_mode_emulation():
+    """Warnlist '/' emulates strict mode: prompts everywhere except whitelisted dirs.
+
+    This is the recommended pattern for users who want 'prompt on everything unlisted'.
+    A whitelist entry more specific than '/' overrides the catch-all warn.
+    """
+    config, state = make(mode_warn=("/",), mode_wl=(W,))
+    assert check_path(config, state, Path(W)).verdict == "allow"    # whitelisted
+    assert check_path(config, state, Path(WS)).verdict == "allow"   # subdir of whitelisted
+    assert check_path(config, state, Path(OTHER)).verdict == "prompt"  # not whitelisted
 
 
 # ── Prefix matching ───────────────────────────────────────────────────────────
@@ -114,7 +159,7 @@ def test_tie_blacklist_wins():
 
 
 def test_winner_is_marked():
-    """The deciding entry should have is_winner=True so 'path why' can identify it."""
+    """The deciding entry should have is_winner=True so 'path explain' can identify it."""
     config, state = make(always_wl=(W,), mode_bl=(WS,))
     result = check_path(config, state, Path(WSS))
     winners = [m for m in result.matched if m.is_winner]
@@ -124,7 +169,7 @@ def test_winner_is_marked():
 
 
 def test_matched_sorted_most_specific_first():
-    """matched is sorted most-specific-first so 'path why' shows the winner at the top."""
+    """matched is sorted most-specific-first so 'path explain' shows the winner at the top."""
     config, state = make(always_wl=(W,), mode_wl=(WS,))
     result = check_path(config, state, Path(WSS))
     assert str(result.matched[0].entry) == WS  # longer → first

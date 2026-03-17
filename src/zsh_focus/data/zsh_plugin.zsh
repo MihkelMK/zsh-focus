@@ -81,9 +81,10 @@ _focus_resolve_dest() {
 #
 # Matching rule: longest (most specific) prefix wins.
 # If the deepest matching rule is a whitelist entry  → allow.
+# If the deepest matching rule is a warnlist entry   → prompt.
 # If the deepest matching rule is a blacklist entry  → block.
-# On a tie (same depth in both lists)               → block.
-# No match on either list                           → strict gate.
+# Ties: blacklist ≥ warnlist > whitelist.
+# No match on any list                              → allow silently.
 _focus_check_dir() {
     local target_dir="$1"
 
@@ -93,55 +94,53 @@ _focus_check_dir() {
     # Resolve to absolute path (:A expands ~ and symlinks)
     target_dir="${target_dir:A}"
 
-    local best_white="" best_black="" dir
+    local best_white="" best_black="" best_warn="" dir
 
-    # Always whitelist
-    for dir in "${ZSH_FOCUS_GLOBAL_WHITELIST[@]}"; do
-        if [[ "$target_dir" == "$dir" || "$target_dir" == "$dir/"* ]]; then
-            [[ ${#dir} -gt ${#best_white} ]] && best_white="$dir"
-        fi
-    done
-
-    # Mode whitelist
-    for dir in "${ZSH_FOCUS_MODE_WHITELIST[@]}"; do
-        if [[ "$target_dir" == "$dir" || "$target_dir" == "$dir/"* ]]; then
+    # Always whitelist + mode whitelist
+    for dir in "${ZSH_FOCUS_GLOBAL_WHITELIST[@]}" "${ZSH_FOCUS_MODE_WHITELIST[@]}"; do
+        if [[ "$target_dir" == "$dir" || "$target_dir" == "${dir%/}/"* ]]; then
             [[ ${#dir} -gt ${#best_white} ]] && best_white="$dir"
         fi
     done
 
     # Mode blacklist
     for dir in "${ZSH_FOCUS_MODE_BLACKLIST[@]}"; do
-        if [[ "$target_dir" == "$dir" || "$target_dir" == "$dir/"* ]]; then
+        if [[ "$target_dir" == "$dir" || "$target_dir" == "${dir%/}/"* ]]; then
             [[ ${#dir} -gt ${#best_black} ]] && best_black="$dir"
         fi
     done
 
-    # At least one list matched — longest wins; tie goes to blacklist.
-    # String length == specificity because all entries are written as resolved
-    # absolute paths by the Python CLI, so a deeper path is always a longer string.
-    if [[ -n "$best_white" || -n "$best_black" ]]; then
-        if [[ ${#best_white} -gt ${#best_black} ]]; then
-            return 0
+    # Mode warnlist
+    for dir in "${ZSH_FOCUS_MODE_WARNLIST[@]}"; do
+        if [[ "$target_dir" == "$dir" || "$target_dir" == "${dir%/}/"* ]]; then
+            [[ ${#dir} -gt ${#best_warn} ]] && best_warn="$dir"
         fi
+    done
+
+    # No match on any list → allow silently
+    [[ -z "$best_white" && -z "$best_black" && -z "$best_warn" ]] && return 0
+
+    # Longest wins; ties: black ≥ warn > white.
+    # Check in ascending priority order with >=; highest priority wins on ties.
+    if [[ ${#best_black} -ge ${#best_warn} && ${#best_black} -ge ${#best_white} && -n "$best_black" ]]; then
         [[ "$ZSH_FOCUS_BLOCK_NOTIFICATION" == "true" ]] && \
             print -P "%F{red}blocked by focus mode '${ZSH_FOCUS_ACTIVE_MODE}'%f" >&2
         return 1
     fi
 
-    # Not on any list — non-strict modes allow it silently
-    [[ "$ZSH_FOCUS_STRICT" != "true" ]] && return 0
-
-    # Strict mode — prompt if interactive, honour config setting otherwise
-    if [[ -o interactive ]]; then
-        local response
-        print -n "Are you sure this isn't a distraction? (y/N) " >&2
-        read -r response
-        [[ "$response" =~ ^[Yy]$ ]] && return 0
-        return 1
-    else
-        [[ "$ZSH_FOCUS_NON_INTERACTIVE" == "allow" ]] && return 0
+    if [[ ${#best_warn} -ge ${#best_white} && -n "$best_warn" ]]; then
+        if [[ -o interactive ]]; then
+            local response
+            print -Pn "%F{yellow}Are you sure this isn't a distraction?%f (y/N) " >&2
+            read -r response
+            [[ "$response" =~ ^[Yy]$ ]] && return 0
+        else
+            [[ "$ZSH_FOCUS_NON_INTERACTIVE" == "allow" ]] && return 0
+        fi
         return 1
     fi
+
+    return 0
 }
 
 # ── cd wrapper ────────────────────────────────────────────────────────────────

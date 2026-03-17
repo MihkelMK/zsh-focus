@@ -29,7 +29,7 @@ def _here_marker(ep: Path, result: CheckResult) -> str:
     matched_set = {m.entry for m in result.matched}
     winner_set = {m.entry for m in result.matched if m.is_winner}
     if ep in winner_set:
-        color = "green" if result.verdict == "allow" else "red"
+        color = {"allow": "green", "block": "red", "prompt": "yellow"}[result.verdict]
         return click.style("  ◀ here", fg=color)
     if ep in matched_set:
         return click.style("  ◀ here (overridden)", dim=True)
@@ -98,15 +98,11 @@ def status() -> None:
 
     if state.active_mode:
         mc = config["modes"].get(state.active_mode)
-        strict_label = (
-            click.style(" strict", fg="yellow") if mc and mc["strict"] else ""
-        )
-        click.echo(
-            f"Active mode: {click.style(state.active_mode, bold=True)}{strict_label}"
-        )
+        click.echo(f"Active mode: {click.style(state.active_mode, bold=True)}")
         if mc:
             for label, key in (
                 ("  Whitelist", "whitelist"),
+                ("  Warnlist", "warnlist"),
                 ("  Blacklist", "blacklist"),
             ):
                 entries = mc[key]
@@ -148,51 +144,23 @@ def list_modes() -> None:
         marker = (
             click.style(" ◀ active", fg="green") if name == state.active_mode else ""
         )
-        strict_label = click.style(" strict", fg="yellow") if mc["strict"] else ""
         click.echo(
-            f"  {name}{marker}{strict_label}  (allow: {len(mc['whitelist'])}, deny: {len(mc['blacklist'])})"
+            f"  {name}{marker}  "
+            f"(allow: {len(mc['whitelist'])}, warn: {len(mc['warnlist'])}, deny: {len(mc['blacklist'])})"
         )
 
 
 @cli.command(name="new", section=Sect.MODES, short_help="Create a new focus mode.")
 @cloup.argument("mode")
-@cloup.option(
-    "--strict/--no-strict",
-    default=False,
-    help="Prompt on unlisted dirs (default: allow them).",
-)
-def new_mode(mode: str, strict: bool) -> None:
-    """Create a new focus mode (lenient by default)."""
+def new_mode(mode: str) -> None:
+    """Create a new focus mode."""
     config = load_config()
     if mode in config["modes"]:
         click.echo(f"Mode '{mode}' already exists.")
         return
-    config["modes"][mode] = {"strict": strict, "whitelist": [], "blacklist": []}
+    config["modes"][mode] = {"whitelist": [], "blacklist": [], "warnlist": []}
     save_config(config)
-    click.echo(f"✓ Mode '{mode}' created{' (strict)' if strict else ''}.")
-
-
-@cli.command(
-    name="set", section=Sect.MODES, short_help="Toggle strict/lenient for a mode."
-)
-@cloup.argument("mode")
-@cloup.option(
-    "--strict/--no-strict",
-    required=True,
-    help="Prompt on unlisted dirs, or allow them silently.",
-)
-def set_mode(mode: str, strict: bool) -> None:
-    """Toggle strict or lenient behaviour for an existing mode."""
-    config = load_config()
-    if mode not in config["modes"]:
-        click.echo(f"Error: mode '{mode}' doesn't exist.", err=True)
-        sys.exit(1)
-    config["modes"][mode]["strict"] = strict
-    save_config(config)
-    state = load_state()
-    if state.active_mode == mode:
-        compile_zsh(config, state)
-    click.echo(f"✓ Mode '{mode}' is now {'strict' if strict else 'lenient'}.")
+    click.echo(f"✓ Mode '{mode}' created.")
 
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
@@ -275,8 +243,39 @@ def ban(path: Path | None, mode: str) -> None:
     click.echo(f"✓ '{target}' → mode '{mode}' blacklist")
 
 
+@path_group.command(name="warn", aliases=["w"], short_help="Add to the warnlist.")
+@cloup.argument(
+    "path",
+    default=None,
+    type=click.Path(path_type=Path, resolve_path=True),
+)
+@cloup.option("-m", "--mode", required=True, help="Mode to add the warn rule to")
+def warn(path: Path | None, mode: str) -> None:
+    """Add [PATH] to a mode's warnlist (default: current directory).
+
+    Warnlisted directories prompt for confirmation instead of being silently
+    allowed or blocked. Warnlists are per-mode only, so -m is always required.
+    """
+    target = path or Path.cwd()
+    config = load_config()
+    state = load_state()
+
+    if mode not in config["modes"]:
+        click.echo(f"Error: mode '{mode}' doesn't exist.", err=True)
+        sys.exit(1)
+
+    wl = config["modes"][mode]["warnlist"]
+    if str(target) in wl:
+        click.echo(f"'{target}' is already in '{mode}' warnlist.")
+        return
+    wl.append(str(target))
+    save_config(config)
+    compile_zsh(config, state)
+    click.echo(f"✓ '{target}' → mode '{mode}' warnlist")
+
+
 @path_group.command(
-    name="clear", aliases=["c"], short_help="Remove from whitelists/blacklists."
+    name="clear", aliases=["c"], short_help="Remove from whitelists/blacklists/warnlists."
 )
 @cloup.argument(
     "path",
@@ -287,7 +286,7 @@ def ban(path: Path | None, mode: str) -> None:
     "-m", "--mode", default=None, help="Mode to remove from (default: always whitelist)"
 )
 def clear(path: Path | None, mode: str | None) -> None:
-    """Remove [PATH] from whitelists and blacklists (default: current directory).
+    """Remove [PATH] from whitelists, warnlists, and blacklists (default: current directory).
 
     Without -m, removes from the always whitelist.
     """
@@ -309,6 +308,7 @@ def clear(path: Path | None, mode: str | None) -> None:
         mc = config["modes"][mode]
         for list_name, lst in (
             ("whitelist", mc["whitelist"]),
+            ("warnlist", mc["warnlist"]),
             ("blacklist", mc["blacklist"]),
         ):
             if str(target) in lst:
@@ -324,14 +324,14 @@ def clear(path: Path | None, mode: str | None) -> None:
 
 
 @path_group.command(
-    name="why", aliases=["w"], short_help="Explain the allow/block decision."
+    name="explain", aliases=["e"], short_help="Explain the allow/block decision."
 )
 @cloup.argument(
     "path",
     default=None,
     type=click.Path(path_type=Path, resolve_path=True),
 )
-def why(path: Path | None) -> None:
+def explain(path: Path | None) -> None:
     """Explain the allow/block decision for [PATH] (default: current directory)."""
     target = path or Path.cwd()
     config = load_config()
@@ -347,13 +347,16 @@ def why(path: Path | None) -> None:
         )
         return
 
-    strict_label = click.style(" strict", fg="yellow") if result.strict else ""
-    click.echo(f"Mode:  {click.style(result.active_mode, bold=True)}{strict_label}")
+    click.echo(f"Mode:  {click.style(result.active_mode, bold=True)}")
 
     if result.matched:
         click.echo("Rules:")
         for m in result.matched:
-            source_color = "red" if "blacklist" in m.source else "green"
+            source_color = (
+                "red" if m.source == "mode blacklist"
+                else "yellow" if m.source == "mode warnlist"
+                else "green"
+            )
             source_str = click.style(m.source, fg=source_color)
             if m.is_winner:
                 winner_str = click.style(

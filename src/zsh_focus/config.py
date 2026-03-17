@@ -65,9 +65,9 @@ def load_config() -> Config:
     config["settings"].update(data.get("settings", {}))
     for name, mc in data.get("modes", {}).items():
         config["modes"][name] = {
-            "strict": mc.get("strict", False),
             "whitelist": mc.get("whitelist", []),
             "blacklist": mc.get("blacklist", []),
+            "warnlist": mc.get("warnlist", []),
         }
     return config
 

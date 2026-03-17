@@ -1,6 +1,7 @@
 """Focus mode engine — compile config to shell variables and evaluate path decisions."""
 
 from pathlib import Path
+from typing import Literal
 
 from zsh_focus.config import COMPILED, ensure_dir, expand
 from zsh_focus.types import CheckResult, Config, MatchedEntry, Source, State
@@ -12,9 +13,9 @@ def check_path(config: Config, state: State, target: Path) -> CheckResult:
     """Evaluate target against the active mode's lists and return a structured result.
 
     Mirrors _focus_check_dir in the zsh plugin: all entries from the always
-    whitelist, mode whitelist, and mode blacklist are tested as path prefixes.
-    The longest matching entry wins; ties go to the blacklist.  In strict mode,
-    a path with no matching entry yields 'prompt' instead of 'allow'.
+    whitelist, mode whitelist, mode blacklist, and mode warnlist are tested as
+    path prefixes.  The longest matching entry wins; ties: black ≥ warn > white.
+    Unmatched paths are always allowed.
     """
     active_mode = state.active_mode
 
@@ -22,13 +23,11 @@ def check_path(config: Config, state: State, target: Path) -> CheckResult:
         return CheckResult(
             target=target,
             active_mode="",
-            strict=False,
             matched=[],
             verdict="allow",
         )
 
     mc = config["modes"].get(active_mode)
-    strict = mc["strict"] if mc else False
 
     # Collect all candidates: (resolved_entry, source_label)
     candidates: list[tuple[Path, Source]] = []
@@ -39,38 +38,44 @@ def check_path(config: Config, state: State, target: Path) -> CheckResult:
             candidates.append((expand(p), "mode whitelist"))
         for p in mc["blacklist"]:
             candidates.append((expand(p), "mode blacklist"))
+        for p in mc["warnlist"]:
+            candidates.append((expand(p), "mode warnlist"))
 
     # Find all entries that are a prefix of (or equal to) the target
     matched: list[MatchedEntry] = []
     best_white: Path | None = None
     best_black: Path | None = None
+    best_warn: Path | None = None
 
     for entry, source in candidates:
-        if target == entry or str(target).startswith(str(entry) + "/"):
+        if target.is_relative_to(entry):
             matched.append(MatchedEntry(entry=entry, source=source))
-            if "blacklist" in source:
+            if source == "mode blacklist":
                 if best_black is None or len(str(entry)) > len(str(best_black)):
                     best_black = entry
+            elif source == "mode warnlist":
+                if best_warn is None or len(str(entry)) > len(str(best_warn)):
+                    best_warn = entry
             else:
                 if best_white is None or len(str(entry)) > len(str(best_white)):
                     best_white = entry
 
-    # Determine verdict — longest wins; tie goes to blacklist
-    verdict: str
+    # Determine verdict — longest wins; ties: black ≥ warn > white.
+    # Iterate lowest→highest priority with >=, so higher priority wins on equal length.
+    verdict: Literal["allow", "block", "prompt"] = "allow"
     winner: Path | None = None
-    if best_white or best_black:
-        if best_white and (
-            best_black is None or len(str(best_white)) > len(str(best_black))
-        ):
-            verdict = "allow"
-            winner = best_white
-        else:
-            verdict = "block"
-            winner = best_black
-    elif strict:
-        verdict = "prompt"
-    else:
-        verdict = "allow"
+    if best_white or best_black or best_warn:
+        best_len = -1
+        pairs: list[tuple[Path | None, Literal["allow", "block", "prompt"]]] = [
+            (best_white, "allow"),
+            (best_warn, "prompt"),
+            (best_black, "block"),
+        ]
+        for candidate, v in pairs:
+            if candidate is not None and len(str(candidate)) >= best_len:
+                best_len = len(str(candidate))
+                verdict = v
+                winner = candidate
 
     for m in matched:
         if m.entry == winner:
@@ -82,7 +87,6 @@ def check_path(config: Config, state: State, target: Path) -> CheckResult:
     return CheckResult(
         target=target,
         active_mode=active_mode,
-        strict=strict,
         matched=matched,
         verdict=verdict,
     )
@@ -104,29 +108,27 @@ def compile_zsh(config: Config, state: State) -> None:
 
     global_wl: list[Path] = [expand(p) for p in config["always"]["whitelist"]]
 
-    mode_strict = False
     mode_wl: list[Path] = []
     mode_bl: list[Path] = []
+    mode_warn: list[Path] = []
     if active_mode and active_mode in config["modes"]:
         mc = config["modes"][active_mode]
-        mode_strict = mc["strict"]
         mode_wl = [expand(p) for p in mc["whitelist"]]
         mode_bl = [expand(p) for p in mc["blacklist"]]
+        mode_warn = [expand(p) for p in mc["warnlist"]]
 
     def zsh_array(items: list[Path]) -> str:
         return "(" + " ".join(f'"{i}"' for i in items) + ")"
-
-    strict = "true" if mode_strict else "false"
 
     lines = [
         "# Auto-generated by zsh-focus CLI — do not edit manually",
         f'ZSH_FOCUS_ACTIVE_MODE="{active_mode}"',
         f'ZSH_FOCUS_BLOCK_NOTIFICATION="{block_notif}"',
         f'ZSH_FOCUS_NON_INTERACTIVE="{non_interact}"',
-        f'ZSH_FOCUS_STRICT="{strict}"',
         f"ZSH_FOCUS_GLOBAL_WHITELIST={zsh_array(global_wl)}",
         f"ZSH_FOCUS_MODE_WHITELIST={zsh_array(mode_wl)}",
         f"ZSH_FOCUS_MODE_BLACKLIST={zsh_array(mode_bl)}",
+        f"ZSH_FOCUS_MODE_WARNLIST={zsh_array(mode_warn)}",
     ]
 
     ensure_dir()

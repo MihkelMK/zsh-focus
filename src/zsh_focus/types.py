@@ -8,12 +8,12 @@ from typing import Literal, TypedDict
 class ModeConfig(TypedDict):
     """Per-mode path rules stored under config['modes'][name]."""
 
-    strict: bool
-    """When True, unlisted directories prompt instead of being silently allowed."""
     whitelist: list[str]
     """Directories explicitly allowed for this mode (raw strings, may contain ~)."""
     blacklist: list[str]
     """Directories explicitly blocked for this mode (raw strings, may contain ~)."""
+    warnlist: list[str]
+    """Directories that prompt for confirmation before allowing (raw strings, may contain ~)."""
 
 
 class AlwaysConfig(TypedDict):
@@ -48,7 +48,7 @@ class State:
     """Name of the currently active focus mode, or '' when focus is off."""
 
 
-Source = Literal["always whitelist", "mode whitelist", "mode blacklist"]
+Source = Literal["always whitelist", "mode whitelist", "mode blacklist", "mode warnlist"]
 """Which list a MatchedEntry was drawn from."""
 
 
@@ -70,9 +70,7 @@ class CheckResult:
     """The path that was evaluated."""
     active_mode: str
     """Name of the mode that was active, or '' if no mode was active."""
-    strict: bool
-    """Whether the active mode was in strict mode at evaluation time."""
     matched: list[MatchedEntry]
     """All list entries that prefix-matched target, sorted most-specific first."""
     verdict: Literal["allow", "block", "prompt"]
-    """Decision for the path. 'prompt' only arises in strict mode with no matching entry."""
+    """Decision for the path. 'prompt' arises when a warnlist entry is the longest match."""

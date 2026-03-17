@@ -3,7 +3,7 @@
 A zsh plugin and Python CLI to block or restrict cd navigation. Keep yourshellf focused.
 
 When a mode is active, navigating into blacklisted directories is blocked.\
-Modes can optionally prompt on unlisted directories too (strict mode).
+Warnlisted directories prompt for confirmation before allowing the `cd`.
 
 ## Installation
 
@@ -50,44 +50,45 @@ zsh-focus off                   Deactivate (transparent shell)
 zsh-focus status                Show active mode and lists
 zsh-focus list (ls)             List all modes
 
-zsh-focus new <mode>            Create a new mode
-zsh-focus set <mode>            Update mode settings
-  --strict / --no-strict        Prompt on unlisted dirs, or allow silently
+zsh-focus new <mode>            Create a new focus mode
 
-zsh-focus path (a)llow  [path] [-m mode]   Whitelist a directory
-zsh-focus path (b)an    [path] -m <mode>   Blacklist a directory
-zsh-focus path (c)lear  [path] [-m mode]   Remove a whitelist/blacklist entry
-zsh-focus path (w)hy    [path]             Show why a directory is allowed or blocked
+zsh-focus path (a)llow   [path] [-m mode]   Whitelist a directory
+zsh-focus path (w)arn    [path] -m <mode>   Add to warnlist (prompt on cd)
+zsh-focus path (b)an     [path] -m <mode>   Blacklist a directory
+zsh-focus path (c)lear   [path] [-m mode]   Remove from all lists
+zsh-focus path (e)xplain [path]             Explain the allow/warn/block decision
 ```
 
-- `allow` and `clear` apply to _always-whitelist_ (all modes) without `-m`.
-- `ban` requires `-m`. Blacklists are per-mode only.
-- `why` defaults to the current directory.
+- `allow` and `clear` apply to the _always-whitelist_ (all modes) without `-m`.
+- `warn` and `ban` require `-m`. These lists are per-mode only.
+- `explain` defaults to the current directory.
 
-### Strict vs lenient modes
+### Warnlists
 
-Modes have two behaviours for directories that aren't on any list:
-
-- **Lenient** (default): Just **ban** the things you know are _distracting_.\
-  Unlisted dirs pass through silently.
-- **Strict**: Every _allowed_ directory must be explicitly **whitelisted**.\
-  Unlisted dirs prompt `Are you sure this isn't a distraction? (y/N)`.
+A warnlist entry prompts `Are you sure this isn't a distraction? (y/N)` before allowing the `cd`.\
+It sits between whitelist (silent allow) and blacklist (hard block) in priority.
 
 ```zsh
-zsh-focus new deep-work --strict    # whitelist-required
-zsh-focus new no-rabbit-holes       # blacklist-only (default)
+zsh-focus path warn ~/social -m work   # prompt before entering ~/social
+```
 
-zsh-focus set deep-work --no-strict # switch an existing mode
+**Strict-mode emulation** — to prompt on _every_ unlisted directory, add `/` to the warnlist.\
+Whitelist entries more specific than `/` still allow silently, so you keep the exception mechanism:
+
+```zsh
+zsh-focus path warn / -m deep-work          # prompt everywhere by default
+zsh-focus path allow ~/work    -m deep-work  # except here
+zsh-focus path allow ~/dotfiles -m deep-work # and here
 ```
 
 ### Path matching
 
 Both exact paths and parent paths match.\
-Whitelisting `~/work` implicitly allows `~/work/projects/foo`. The same prefix logic applies to blacklists.
+Whitelisting `~/work` implicitly allows `~/work/projects/foo`. The same prefix logic applies to all three lists.
 
-When a path matches entries on both lists, the **most specific rule wins**.\
+When a path matches entries on multiple lists, the **most specific rule wins**.\
 Whichever matching entry has the deeper path takes priority, regardless of which list it's on.\
-On a tie, the blacklist wins.
+On a tie: blacklist beats warnlist beats whitelist.
 
 ```
 ~/work            → whitelisted (always)
@@ -103,15 +104,15 @@ This means you can carve exceptions in either direction without restructuring yo
 
 ### Inspecting decisions
 
-`zsh-focus status` marks whichever list entry matches your current directory with `◀ here`, coloured green (allowed) or red (blocked).
+`zsh-focus status` marks whichever list entry matches your current directory with `◀ here`, coloured green (allowed), yellow (warn), or red (blocked).
 
-`zsh-focus path why [path]` explains the decision. Which rules matched, which one won, and the verdict:
+`zsh-focus path explain [path]` explains the decision — which rules matched, which one won, and the verdict:
 
 ```
-$ zsh-focus path why ~/work/side-gigs
+$ zsh-focus path explain ~/work/side-gigs
 
 Path:  /home/user/work/side-gigs
-Mode:  deep-work  strict
+Mode:  deep-work
 Rules:
   /home/user/work/side-gigs  [mode blacklist]   ← winner
   /home/user/work             [always whitelist] (overridden)
@@ -138,23 +139,26 @@ cd ~/.config   # ❌  blocked by focus mode 'no-rabbit-holes'
 cd ~/work      # ✅  not on any list, passes through silently
 ```
 
-#### Strict mode - whitelist only what you need
+#### Strict-style mode - prompt on everything unlisted
 
-It's time to lock in. Everything is suspect unless explicitly allowed.
+It's time to lock in. Warn on everything, explicitly allow only what you need.
 
 ```zsh
-zsh-focus new deep-work --strict
+zsh-focus new deep-work
+
+# Prompt everywhere by default
+zsh-focus path warn / -m deep-work
 
 # Allow work directories (for all modes)
 zsh-focus path allow ~/work
 
-# ban something specific only in this mode
+# Ban something specific only in this mode
 zsh-focus path ban ~/work/side-gigs -m deep-work
 
-# deepest nested rule wins
+# Deepest nested rule wins — carve an exception inside the ban
 zsh-focus path allow ~/work/side-gigs/important -m deep-work
 
-# Ban distractions
+# Ban distractions outright (no prompt)
 zsh-focus path ban ~/social  -m deep-work
 zsh-focus path ban ~/games   -m deep-work
 
@@ -182,12 +186,11 @@ block_notification = true           # show red message on block
 non_interactive_behavior = "block"  # "block" or "allow" for scripts/subshells
 
 [modes.deep-work]
-strict = true
 whitelist = ["~/work/projects"]
+warnlist = ["/"]                    # prompt everywhere not explicitly allowed
 blacklist = ["~/social", "~/games"]
 
 [modes.no-rabbit-holes]
-strict = false
 blacklist = ["~/social", "~/games", "~/.config"]
 ```
 
