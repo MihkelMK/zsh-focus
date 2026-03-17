@@ -1,10 +1,11 @@
 """Disk I/O and path helpers for zsh-focus."""
 
 import os
+import tomllib
 from dataclasses import asdict
 from pathlib import Path
 
-import toml
+import tomli_w
 
 from zsh_focus.types import Config, State
 
@@ -57,7 +58,8 @@ def load_config() -> Config:
     """
     if not CONFIG_FILE.exists():
         return default_config()
-    data = toml.load(CONFIG_FILE)
+    with open(CONFIG_FILE, "rb") as f:
+        data = tomllib.load(f)
     config = default_config()
     config["always"]["whitelist"] = data.get("always", {}).get("whitelist", [])
     config["settings"].update(data.get("settings", {}))
@@ -73,20 +75,21 @@ def load_config() -> Config:
 def save_config(config: Config) -> None:
     """Persist config to CONFIG_FILE, creating the config directory if needed."""
     ensure_dir()
-    with open(CONFIG_FILE, "w") as f:
-        toml.dump(config, f)
+    with open(CONFIG_FILE, "wb") as f:
+        tomli_w.dump(config, f)
 
 
 def load_state() -> State:
     """Load runtime state from STATE_FILE, returning an empty State if absent."""
     if not STATE_FILE.exists():
         return State()
-    data = toml.load(STATE_FILE)
+    with open(STATE_FILE, "rb") as f:
+        data = tomllib.load(f)
     return State(active_mode=data.get("active_mode", ""))
 
 
 def save_state(state: State) -> None:
     """Persist runtime state to STATE_FILE, creating the config directory if needed."""
     ensure_dir()
-    with open(STATE_FILE, "w") as f:
-        toml.dump(asdict(state), f)
+    with open(STATE_FILE, "wb") as f:
+        tomli_w.dump(asdict(state), f)
